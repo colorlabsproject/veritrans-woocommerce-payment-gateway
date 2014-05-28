@@ -1,4 +1,8 @@
 <?php
+
+require_once(dirname(__FILE__) . '/../lib/veritrans/veritrans.php');
+require_once(dirname(__FILE__) . '/../lib/veritrans/lib/veritrans_notification.php');
+
 /**
 	 * Veritrans Payment Gateway Class
 	 */
@@ -38,12 +42,14 @@ class WC_Gateway_Veritrans extends WC_Payment_Gateway {
     $this->server_key     		= $this->get_option( 'server_key' );
 		$this->merchant_id     		= $this->get_option( 'merchant_id' );
     $this->merchant_hash_key 	= $this->get_option( 'merchant_hash_key' );
+    $this->api_version        = $this->get_option( 'select_veritrans_api_version' );
+    $this->environment        = $this->get_option( 'select_veritrans_environment' );
+    $this->to_idr_rate        = $this->get_option( 'to_idr_rate' );
 
     $this->log = new WC_Logger(); 
 
 		// Payment listener/API hook
 		add_action( 'woocommerce_api_wc_gateway_veritrans', array( &$this, 'veritrans_vtweb_response' ) );
-		
     add_action( 'woocommerce_update_options_payment_gateways_' . $this->id, array( &$this, 'process_admin_options' ) ); 
     add_action( 'wp_enqueue_scripts', array( &$this, 'veritrans_scripts' ) );
     add_action( 'admin_print_scripts-woocommerce_page_woocommerce_settings', array( &$this, 'veritrans_admin_scripts' ));
@@ -58,6 +64,7 @@ class WC_Gateway_Veritrans extends WC_Payment_Gateway {
 	function veritrans_admin_scripts() {
 		wp_enqueue_script( 'admin-veritrans', VT_PLUGIN_DIR . 'js/admin-scripts.js', array('jquery') );
 	}
+
   function veritrans_scripts() {
     if( is_checkout() ) {
       wp_enqueue_script( 'veritrans', 'https://payments.veritrans.co.id/vtdirect/veritrans.min.js', array('jquery') );
@@ -91,6 +98,7 @@ class WC_Gateway_Veritrans extends WC_Payment_Gateway {
    * Show form containing Credit Cards details
    */
   function payment_fields() { 
+
 		if($this->description) echo '<p>'.$this->description.'</p>';
 
 		if('veritrans_direct'==$this->select_veritrans_payment) : ?>	
@@ -169,7 +177,7 @@ class WC_Gateway_Veritrans extends WC_Payment_Gateway {
 					empty($_POST['veritrans_card_exp_year']) || $_POST['veritrans_card_exp_year'] == '' ) {
 				$woocommerce->add_error( __('Please choose your Credit Card Expiration Date', 'woocommerce') );
 			}
-
+  
 			if( empty($_POST['veritrans_security']) || $_POST['veritrans_security'] == '' ) {
 				$woocommerce->add_error( __('Please input your Security Code', 'woocommerce') );
 			}
@@ -202,6 +210,27 @@ class WC_Gateway_Veritrans extends WC_Payment_Gateway {
 				'description' => __( 'This controls the description which the user sees during checkout', 'woocommerce' ),
         'default' => ''
       ),
+      'select_veritrans_api_version' => array(
+        'title' => __( 'API Version', 'woocommerce' ),
+        'type' => 'select',
+        'default' => 2,
+        'description' => __( 'Select the Veritrans API version', 'woocommerce' ),
+        'options'   => array(
+          1    => __( 'v1', 'woocommerce' ),
+          2   => __( 'v2', 'woocommerce' ),
+        ),
+      ),
+      'select_veritrans_environment' => array(
+        'title' => __( 'Environment', 'woocommerce' ),
+        'type' => 'select',
+        'default' => 'sandbox',
+        'description' => __( 'Select the Veritrans Environment', 'woocommerce' ),
+        'options'   => array(
+          'sandbox'    => __( 'Sandbox', 'woocommerce' ),
+          'production'   => __( 'Production', 'woocommerce' ),
+        ),
+        'class' => 'v2_settings sensitive',
+      ),
 			'select_veritrans_payment' => array(
         'title' => __( 'Payment Method', 'woocommerce' ),
         'type' => 'select',
@@ -211,34 +240,47 @@ class WC_Gateway_Veritrans extends WC_Payment_Gateway {
 								'veritrans_direct' 		=> __( 'Direct', 'woocommerce' ),
 								'veritrans_web' 	=> __( 'Web', 'woocommerce' ),
 							),
+        'class' => 'v1_settings sensitive',
       ),
 			'merchant_id' => array(
         'title' => __( 'Merchant ID', 'woocommerce' ),
         'type' => 'text',
-				'class'			=> 'veritrans_web',
-        'description' => sprintf(__( 'Enter your Veritrans Merchant ID. Get the ID <a href="%s" target="_blank">here</a>', 'woocommerce' ),$key_url),
+				'description' => sprintf(__( 'Enter your Veritrans Merchant ID. Get the ID <a href="%s" target="_blank">here</a>', 'woocommerce' ),$key_url),
+        'class' => 'v1_vtweb_settings sensitive',
       ),
 			'merchant_hash_key' => array(
         'title' => __( 'Merchant Hash Key', 'woocommerce' ),
         'type' => 'text',
-				'class'			=> 'veritrans_web',
-        'description' => sprintf(__( 'Enter your Veritrans Merchant hash key. Get the key <a href="%s" target="_blank">here</a>', 'woocommerce' ),$key_url),
+				'description' => sprintf(__( 'Enter your Veritrans Merchant hash key. Get the key <a href="%s" target="_blank">here</a>', 'woocommerce' ),$key_url),
+        'class' => 'v1_vtweb_settings sensitive',
       ),
       'client_key' => array(
         'title' => __("Client Key", 'woocommerce'),
         'type' => 'text',
-				'class'			=> 'veritrans_direct',
-        'description' => sprintf(__('Input your Veritrans Client Key. Get the key <a href="%s" target="_blank">here</a>', 'woocommerce' ),$key_url),
-        'default' => ''
+				'description' => sprintf(__('Input your Veritrans Client Key. Get the key <a href="%s" target="_blank">here</a>', 'woocommerce' ),$key_url),
+        'default' => '',
+        'class' => 'v1_vtdirect_settings',
       ),
       'server_key' => array(
         'title' => __("Server Key", 'woocommerce'),
         'type' => 'text',
-				'class'			=> 'veritrans_direct',
-        'description' => sprintf(__('Input your Veritrans Server Key. Get the key <a href="%s" target="_blank">here</a>', 'woocommerce' ),$key_url),
-        'default' => ''
+				'description' => sprintf(__('Input your Veritrans Server Key. Get the key <a href="%s" target="_blank">here</a>', 'woocommerce' ),$key_url),
+        'default' => '',
+        'class' => 'v1_vtdirect_settings'
       ),
     );
+
+    if (get_woocommerce_currency() != 'IDR')
+    {
+      $this->form_fields['to_idr_rate'] = array(
+        'title' => __("Current Currency to IDR Rate", 'woocommerce'),
+        'type' => 'text',
+        'class'     => 'veritrans_direct',
+        'description' => 'The current currency to IDR rate',
+        'default' => '10000',
+        'class' => 'v1_vtdirect_settings'
+      );
+    }
   }
 
   /**
@@ -276,285 +318,449 @@ class WC_Gateway_Veritrans extends WC_Payment_Gateway {
    * Charge Payment 
    */
   function charge_payment( $order_id ) {
-    global $woocommerce;
-		$order_items = array();
 
-    // VT-DIRECT
-    // ---------
-		if( 'veritrans_direct' == $this->select_veritrans_payment ){
-			// Check token id
-			if( $_POST['veritrans_token_id'] == '' ) {
-				throw new Exception( __('Invalid Token ID', 'woocommerce') );
-			}
-
-			$endpoint_url = 'https://payments.veritrans.co.id/vtdirect/v1/charges';
-			$server_key = $this->server_key;
-			$server_key = base64_encode($server_key . ':');
-			$token_id = $_POST['veritrans_token_id'];
-
-			$order = new WC_Order( $order_id );
-			
-			$shipping_address = array();
-			$billing_address = array();
-
-			// Order Items
-			if( sizeof( $order->get_items() ) > 0 ) {
-				foreach( $order->get_items() as $item ) {
-					$order_items[] = array(
-						'id' => $item['product_id'],
-						'name' => substr($item['name'], 0, 20),
-						'qty' => $item['qty'] / 1,
-						'price' => ceil( $order->get_item_subtotal( $item, false ) )
-					);
-				}
-			}
-
-			// Shipping Fee
-      if( $order->get_total_shipping() > 0 ) {
-        $order_items[] = array(
-          'id' => 'shippingfee',
-          'name' => 'Shipping Fee',
-          'qty' => 1,
-          'price' => ceil( $order->get_total_shipping() )
-        );
+    if (2 == $this->api_version)
+    {
+      $this->charge_v2_vtweb_payment( $order_id );
+    } else
+    {
+      if ('veritrans_direct' == $this->select_veritrans_payment)
+      {
+        $this->charge_v1_vtdirect_payment( $order_id );
+      } else
+      {
+        $this->charge_v1_vtweb_payment( $order_id );
       }
-
-      // Tax
-      if( $order->get_total_tax() > 0 ) {
-        $order_items[] = array(
-          'id' => 'taxfee',
-          'name' => 'Tax',
-          'qty' => 1,
-          'price' => ceil($order->get_total_tax())
-        );
-      }
-
-      // Fees
-      if ( sizeof( $order->get_fees() ) > 0 ) {
-        $fee_counter = 0;
-        foreach ( $order->get_fees() as $item ) {
-          $fee_counter++;
-          $order_items[] = array(
-            'id' => 'feeitem' . $fee_counter,
-            'name' => 'Fee Item ' . $fee_counter,
-            'qty' => 1,
-            'price' => ceil( $item['line_total'] )
-          );
-        }
-      }
-
-			// Shipping Address
-			$shipping_address['first_name'] = $order->shipping_first_name;
-			$shipping_address['last_name'] = $order->shipping_last_name;
-			$shipping_address['address1'] = $order->shipping_address_1;
-			$shipping_address['address2'] = $order->shipping_address_2;
-			$shipping_address['city'] = $order->shipping_city;
-			$shipping_address['postal_code'] = $order->shipping_postcode;
-			$shipping_address['phone'] = $order->billing_phone;
-
-			// Billing Address
-			$billing_address['first_name'] = $order->billing_first_name;
-			$billing_address['last_name'] = $order->billing_last_name;
-			$billing_address['address1'] = $order->billing_address_1;
-			$billing_address['address2'] = $order->billing_address_2;
-			$billing_address['city'] = $order->billing_city;
-			$billing_address['postal_code'] = $order->billing_postcode;
-			$billing_address['phone'] = $order->billing_phone;
-
-			// Body that will be send to Veritrans
-			$body = array(
-				'token_id' => $token_id,
-				'order_id' => $order_id,
-				'order_items' => $order_items,
-				'gross_amount' => ceil( $order->order_total ),
-				'email' => $order->billing_email,
-				'shipping_address' => $shipping_address,
-				'billing_address' => $billing_address
-			);
-
-			$headers = array( 
-				'Authorization' => 'Basic ' . $server_key,
-				'content-type' => 'application/json'
-			);    
-
-			$response = wp_remote_post( $endpoint_url, array(
-				'body' => json_encode($body),
-				'headers' => $headers,
-				'timeout' => 20,
-				'sslverify' => false
-			) );
-
-			// If wp_remote_post failed
-			if( is_wp_error( $response ) ) {
-				throw new Exception( $response->get_error_message() );
-			}
-
-			$response_body = $response['body'];
-			$response_body = json_decode( $response_body );
-
-			// If response from Veritrans is failure
-			if( $response_body->code != 'VD00' ) {
-				throw new Exception( $response_body->message );
-			}
-			
-			// Set order as complete
-			$order->payment_complete();
-	
-			// Remove cart
-			$woocommerce->cart->empty_cart();
-		
     }
 
-    // VT-WEB
-    // ------
-    else {
-			$order = new WC_Order( $order_id );			
-			$merchant_hash = $this->generate_merchant_hash($this->merchant_id, $this->merchant_hash_key, $order_id);
+  }
 
-      $data = array(
-        'version'                         => $this->version,
-        'merchant_id'                     => $this->merchant_id,
-        'merchanthash'                    => $merchant_hash,
+  /**
+   * Routine for charging v2 VT-WEB
+   */
+  function charge_v2_vtweb_payment( $order_id )
+  {
+    global $woocommerce;
+    $order_items = array();
 
-        'order_id'                        => $order_id,
-        'billing_different_with_shipping' => isset($_POST['ship_to_different_address']) ? $_POST['ship_to_different_address'] : 0,
-        'required_shipping_address'       => 1,
+    $order = new WC_Order( $order_id );     
+    $veritrans = new Veritrans();
 
-        'shipping_first_name'             => $_POST['shipping_first_name'],
-        'shipping_last_name'              => $_POST['shipping_last_name'],
-        'shipping_address1'               => $_POST['shipping_address_1'],
-        'shipping_address2'               => $_POST['shipping_address_2'],
-        'shipping_city'                   => $_POST['shipping_city'],
-        'shipping_country_code'           => $this->convert_country_code( $_POST['shipping_country'] ), //ISO 3166-1 alpha-3
-        'shipping_postal_code'            => $_POST['shipping_postcode'],
-        'shipping_phone'                  => $_POST['billing_phone'],
+    $veritrans->api_version = 2;
+    $veritrans->environment = ($this->environment == 'production' ? Veritrans::ENVIRONMENT_PRODUCTION : Veritrans::ENVIRONMENT_DEVELOPMENT);
+    $veritrans->payment_type = ($this->select_veritrans_payment == 'veritrans_direct' ? Veritrans::VT_DIRECT : Veritrans::VT_WEB);
+    $veritrans->server_key = $this->server_key;
+    $veritrans->order_id = $order_id;
 
-        'email'                           => $_POST['billing_email'], 
+    if ($_POST['ship_to_different_address'])
+    {
+      $veritrans->required_shipping_address = 1;
+      $veritrans->billing_different_with_shipping = 1;
+      $veritrans->shipping_first_name = $_POST['shipping_first_name'];
+      $veritrans->shipping_last_name = $_POST['shipping_last_name'];
+      $veritrans->shipping_address1 = $_POST['shipping_address_1'];
+      $veritrans->shipping_address2 = $_POST['shipping_address_2'];
+      $veritrans->shipping_city = $_POST['shipping_city'];
+      $veritrans->shipping_country_code = $_POST['shipping_country'];
+      $veritrans->shipping_phone = $_POST['billing_phone'];
+      $veritrans->shipping_postal_code = $_POST['shipping_postcode'];
+    } else
+    {
+      $veritrans->required_shipping_address = 1;
+      $veritrans->billing_different_with_shipping = 0;
+    }
 
-        'first_name'                      => $_POST['billing_first_name'],
-        'last_name'                       => $_POST['billing_last_name'],
-        'postal_code'                     => $_POST['billing_postcode'],
-        'address1'                        => $_POST['billing_address_1'],
-        'address2'                        => $_POST['billing_address_2'],
-        'city'                            => $_POST['billing_city'],
-        'country_code'                    => $this->convert_country_code( $_POST['billing_country'] ), //ISO 3166-1 alpha-3
-        'phone'                           => $_POST['billing_phone'], 
+    $veritrans->first_name = $_POST['billing_first_name'];
+    $veritrans->last_name = $_POST['billing_last_name'];
+    $veritrans->address1 = $_POST['billing_address_1'];
+    $veritrans->address2 = $_POST['billing_address_2'];
+    $veritrans->city = $_POST['billing_city'];
+    $veritrans->country_code = $_POST['billing_country'];
+    $veritrans->postal_code = $_POST['billing_postcode'];
+    $veritrans->phone = $_POST['billing_phone'];
+    $veritrans->email = $_POST['billing_email'];
 
-        /* Optional 
-        'finish_payment_return_url'       => $this->finish_payment_return_url,
-        'unfinish_payment_return_url'     => $this->unfinish_payment_return_url,
-        'error_payment_return_url'        => $this->error_payment_return_url,
+    // Populate Items
+    $items = array();
 
-        'enable_3d_secure'                => 1,
+    if( sizeof( $order->get_items() ) > 0 ) {
+      foreach( $order->get_items() as $item ) {
+        if ( $item['qty'] ) {
+          $product = $order->get_product_from_item( $item );
 
-        'bank'                            => 'bni',
-        'installment_banks'               => ["bni", "cimb"]
-        'promo_bins'                      => '',
-        'point_banks'                     => ["bni", "cimb"],
-        'payment_methods'                 => ["credit_card", "mandiri_clickpay"]
-        'installment_terms'               => ''
-        */
-      );
+          $veritrans_item = array();
 
-      // Populate Items
-      $data['repeat_line'] = 0;
-      if( sizeof( $order->get_items() ) > 0 ) {
-        foreach( $order->get_items() as $item ) {
-          if ( $item['qty'] ) {
-            $product = $order->get_product_from_item( $item );
+          $veritrans_item['item_id']    = $item['product_id'];
+          $veritrans_item['item_name1'] = $item['name'];
+          $veritrans_item['item_name2'] = $item['name'];
+          $veritrans_item['price']      = $order->get_item_subtotal( $item, false );
+          $veritrans_item['quantity']   = $item['qty'];
 
-            $item_id[]    = $item['product_id'];
-            $item_name1[] = substr($item['name'], 0, 20);
-            $item_name2[] = substr($item['name'], 0, 20);
-            $price[]      = ceil( $order->get_item_subtotal( $item, false ) );
-            $quantity[]   = $item['qty'];
-
-            $data['repeat_line']++;
-          }
+          $items[] = $veritrans_item;
         }
       }
+    }
 
-      // Shipping fee
-      if( $order->get_total_shipping() > 0 ) {
-        $item_id[] = 'shippingfee';
-        $item_name1[] = 'Shipping Fee';
-        $item_name2[] = 'Shipping Fee';
-        $price[] = ceil($order->get_total_shipping());
-        $quantity[] = 1;
+    // Shipping fee
+    if( $order->get_total_shipping() > 0 ) {
+      $items[] = array(
+        'item_id' => 'shippingfee',
+        'item_name1' => 'Shipping Fee',
+        'item_name2' => 'Shipping Fee',
+        'price' => $order->get_total_shipping(),
+        'quantity' => 1,
+        );
+    }
 
-        $data['repeat_line']++;
+    // Tax
+    if( $order->get_total_tax() > 0 ) {
+      $items[] = array(
+        'item_id' => 'taxfee',
+        'item_name1' => 'Tax',
+        'item_name2' => 'Tax',
+        'price' => $order->get_total_tax(),
+        'quantity' => 1,
+        );
+    }
+
+    // Fees
+    if ( sizeof( $order->get_fees() ) > 0 ) {
+      $fees = $order->get_fees();
+      for ( $i = 0; $i < count($fees); $i++ ) {
+        $items[] = array(
+          'item_id' => 'itemfee' . $i,
+          'item_name1' => 'Fee ' . $i,
+          'item_name2' => 'Fee ' . $i,
+          'price' => $item['line_total'],
+          'quantity' => 1,
+          ); 
       }
+    }
 
-      // Tax
-      if( $order->get_total_tax() > 0 ) {
-        $item_id[] = 'taxfee';
-        $item_name1[] = 'Tax';
-        $item_name2[] = 'Tax';
-        $price[] = ceil($order->get_total_tax());
-        $quantity[] = 1;
-
-        $data['repeat_line']++;
+    // sift through the entire item to ensure that currency conversion is applied
+    if (get_woocommerce_currency() != 'IDR')
+    {
+      foreach ($items as &$item) {
+        $item['price'] = $item['price'] * $this->to_idr_rate;
       }
+    }
 
-      // Fees
-      if ( sizeof( $order->get_fees() ) > 0 ) {
-        foreach ( $order->get_fees() as $item ) {
+    $veritrans->items = $items;
+    $veritrans->force_sanitization = TRUE;
+
+    $charge_result = $veritrans->getTokens();
+    
+    // If wp_remote_post failed
+    if( $veritrans->error ) {
+      throw new Exception( $veritrans->error );
+    } else {
+      header('Location:' . $charge_result['redirect_url']);
+      exit;
+      // $result = json_decode( wp_remote_retrieve_body( $vtweb ), true );
+
+      // // check result
+      // if( !empty($result['token_merchant']) ) {
+      //   // No error
+
+      //   if ( ! empty( $result['token_browser'] ) )
+      //     update_post_meta( $order->id, '_token_browser', $result['token_browser'] );
+      //   if ( ! empty( $result['token_merchant'] ) )
+      //     update_post_meta( $order->id, '_token_merchant', $result['token_merchant'] );  
+      // }
+
+      // else {
+      //   // Veritrans doesn't return tokens
+      //   $error_str = '';
+      //   foreach( $result['errors'] as $error_name => $error_message ) {
+      //     $error_str .= "<br><strong>{$error_name}</strong>: {$error_message}\n";
+      //   }
+      //   throw new Exception( $error_str );
+      // }
+    }
+  }
+
+  /**
+   * Routine for charging v1 VT-WEB
+   */
+  function charge_v1_vtweb_payment( $order_id )
+  {
+    global $woocommerce;
+    $order_items = array();
+
+    $order = new WC_Order( $order_id );     
+    $merchant_hash = $this->generate_merchant_hash($this->merchant_id, $this->merchant_hash_key, $order_id);
+
+    $data = array(
+      'version'                         => $this->version,
+      'merchant_id'                     => $this->merchant_id,
+      'merchanthash'                    => $merchant_hash,
+
+      'order_id'                        => $order_id,
+      'billing_different_with_shipping' => isset($_POST['ship_to_different_address']) ? $_POST['ship_to_different_address'] : 0,
+      'required_shipping_address'       => 1,
+
+      'shipping_first_name'             => $_POST['shipping_first_name'],
+      'shipping_last_name'              => $_POST['shipping_last_name'],
+      'shipping_address1'               => $_POST['shipping_address_1'],
+      'shipping_address2'               => $_POST['shipping_address_2'],
+      'shipping_city'                   => $_POST['shipping_city'],
+      'shipping_country_code'           => $this->convert_country_code( $_POST['shipping_country'] ), //ISO 3166-1 alpha-3
+      'shipping_postal_code'            => $_POST['shipping_postcode'],
+      'shipping_phone'                  => $_POST['billing_phone'],
+
+      'email'                           => $_POST['billing_email'], 
+
+      'first_name'                      => $_POST['billing_first_name'],
+      'last_name'                       => $_POST['billing_last_name'],
+      'postal_code'                     => $_POST['billing_postcode'],
+      'address1'                        => $_POST['billing_address_1'],
+      'address2'                        => $_POST['billing_address_2'],
+      'city'                            => $_POST['billing_city'],
+      'country_code'                    => $this->convert_country_code( $_POST['billing_country'] ), //ISO 3166-1 alpha-3
+      'phone'                           => $_POST['billing_phone'], 
+
+      /* Optional 
+      'finish_payment_return_url'       => $this->finish_payment_return_url,
+      'unfinish_payment_return_url'     => $this->unfinish_payment_return_url,
+      'error_payment_return_url'        => $this->error_payment_return_url,
+
+      'enable_3d_secure'                => 1,
+
+      'bank'                            => 'bni',
+      'installment_banks'               => ["bni", "cimb"]
+      'promo_bins'                      => '',
+      'point_banks'                     => ["bni", "cimb"],
+      'payment_methods'                 => ["credit_card", "mandiri_clickpay"]
+      'installment_terms'               => ''
+      */
+    );
+
+    // Populate Items
+    $data['repeat_line'] = 0;
+    if( sizeof( $order->get_items() ) > 0 ) {
+      foreach( $order->get_items() as $item ) {
+        if ( $item['qty'] ) {
+          $product = $order->get_product_from_item( $item );
+
+          $item_id[]    = $item['product_id'];
+          $item_name1[] = substr($item['name'], 0, 20);
+          $item_name2[] = substr($item['name'], 0, 20);
+          $price[]      = ceil( $order->get_item_subtotal( $item, false ) );
+          $quantity[]   = $item['qty'];
+
           $data['repeat_line']++;
-
-          $item_id[] = 'itemfee' . $data['repeat_line'];
-          $item_name1[] = 'Fee ' . $data['repeat_line'];
-          $item_name2[] = 'Fee ' . $data['repeat_line'];
-          $price[] = ceil($item['line_total']);
-          $quantity[] = 1;
         }
       }
+    }
 
-      $data['item_id']    = $item_id;
-      $data['item_name1'] = $item_name1;
-      $data['item_name2'] = $item_name2;
-      $data['price']      = $price;
-      $data['quantity']   = $quantity;
+    // Shipping fee
+    if( $order->get_total_shipping() > 0 ) {
+      $item_id[] = 'shippingfee';
+      $item_name1[] = 'Shipping Fee';
+      $item_name2[] = 'Shipping Fee';
+      $price[] = ceil($order->get_total_shipping());
+      $quantity[] = 1;
 
-      $headers = array( 
-        'accept' => 'application/json',
-        'content-type' => 'application/json'
+      $data['repeat_line']++;
+    }
+
+    // Tax
+    if( $order->get_total_tax() > 0 ) {
+      $item_id[] = 'taxfee';
+      $item_name1[] = 'Tax';
+      $item_name2[] = 'Tax';
+      $price[] = ceil($order->get_total_tax());
+      $quantity[] = 1;
+
+      $data['repeat_line']++;
+    }
+
+    // Fees
+    if ( sizeof( $order->get_fees() ) > 0 ) {
+      foreach ( $order->get_fees() as $item ) {
+        $data['repeat_line']++;
+
+        $item_id[] = 'itemfee' . $data['repeat_line'];
+        $item_name1[] = 'Fee ' . $data['repeat_line'];
+        $item_name2[] = 'Fee ' . $data['repeat_line'];
+        $price[] = ceil($item['line_total']);
+        $quantity[] = 1;
+      }
+    }
+
+    $data['item_id']    = $item_id;
+    $data['item_name1'] = $item_name1;
+    $data['item_name2'] = $item_name2;
+    $data['price']      = $price;
+    $data['quantity']   = $quantity;
+
+    $headers = array( 
+      'accept' => 'application/json',
+      'content-type' => 'application/json'
+    );
+
+    $vtweb = wp_remote_post( self::VT_REQUEST_KEY_URL, array(
+      'body' => json_encode($data),
+      'timeout' => 30,
+      'sslverify' => false,
+      'headers' => $headers
+    ) );
+
+    // If wp_remote_post failed
+    if( is_wp_error( $vtweb ) ) {
+      throw new Exception( $vtweb->get_error_message() );
+    }else{
+      $result = json_decode( wp_remote_retrieve_body( $vtweb ), true );
+
+      // check result
+      if( !empty($result['token_merchant']) ) {
+        // No error
+
+        if ( ! empty( $result['token_browser'] ) )
+          update_post_meta( $order->id, '_token_browser', $result['token_browser'] );
+        if ( ! empty( $result['token_merchant'] ) )
+          update_post_meta( $order->id, '_token_merchant', $result['token_merchant'] );  
+      }
+
+      else {
+        // Veritrans doesn't return tokens
+        $error_str = '';
+        foreach( $result['errors'] as $error_name => $error_message ) {
+          $error_str .= "<br><strong>{$error_name}</strong>: {$error_message}\n";
+        }
+        throw new Exception( $error_str );
+      }
+    }
+  }
+
+  /**
+   * Routine for charging v1 VT-DIRECT
+   */
+  function charge_v1_vtdirect_payment( $order_id )
+  {
+    global $woocommerce;
+    $order_items = array();
+
+    // Check token id
+    if( $_POST['veritrans_token_id'] == '' ) {
+      throw new Exception( __('Invalid Token ID', 'woocommerce') );
+    }
+
+    $endpoint_url = 'https://payments.veritrans.co.id/vtdirect/v1/charges';
+    $server_key = $this->server_key;
+    $server_key = base64_encode($server_key . ':');
+    $token_id = $_POST['veritrans_token_id'];
+
+    $order = new WC_Order( $order_id );
+    
+    $shipping_address = array();
+    $billing_address = array();
+
+    // Order Items
+    if( sizeof( $order->get_items() ) > 0 ) {
+      foreach( $order->get_items() as $item ) {
+        $order_items[] = array(
+          'id' => $item['product_id'],
+          'name' => substr($item['name'], 0, 20),
+          'qty' => $item['qty'] / 1,
+          'price' => ceil( $order->get_item_subtotal( $item, false ) )
+        );
+      }
+    }
+
+    // Shipping Fee
+    if( $order->get_total_shipping() > 0 ) {
+      $order_items[] = array(
+        'id' => 'shippingfee',
+        'name' => 'Shipping Fee',
+        'qty' => 1,
+        'price' => ceil( $order->get_total_shipping() )
       );
+    }
 
-			$vtweb = wp_remote_post( self::VT_REQUEST_KEY_URL, array(
-				'body' => json_encode($data),
-				'timeout' => 30,
-				'sslverify' => false,
-        'headers' => $headers
-			) );
+    // Tax
+    if( $order->get_total_tax() > 0 ) {
+      $order_items[] = array(
+        'id' => 'taxfee',
+        'name' => 'Tax',
+        'qty' => 1,
+        'price' => ceil($order->get_total_tax())
+      );
+    }
 
-			// If wp_remote_post failed
-			if( is_wp_error( $vtweb ) ) {
-				throw new Exception( $vtweb->get_error_message() );
-			}else{
-        $result = json_decode( wp_remote_retrieve_body( $vtweb ), true );
+    // Fees
+    if ( sizeof( $order->get_fees() ) > 0 ) {
+      $fee_counter = 0;
+      foreach ( $order->get_fees() as $item ) {
+        $fee_counter++;
+        $order_items[] = array(
+          'id' => 'feeitem' . $fee_counter,
+          'name' => 'Fee Item ' . $fee_counter,
+          'qty' => 1,
+          'price' => ceil( $item['line_total'] )
+        );
+      }
+    }
 
-        // check result
-        if( !empty($result['token_merchant']) ) {
-          // No error
+    // Shipping Address
+    $shipping_address['first_name'] = $order->shipping_first_name;
+    $shipping_address['last_name'] = $order->shipping_last_name;
+    $shipping_address['address1'] = $order->shipping_address_1;
+    $shipping_address['address2'] = $order->shipping_address_2;
+    $shipping_address['city'] = $order->shipping_city;
+    $shipping_address['postal_code'] = $order->shipping_postcode;
+    $shipping_address['phone'] = $order->billing_phone;
 
-          if ( ! empty( $result['token_browser'] ) )
-            update_post_meta( $order->id, '_token_browser', $result['token_browser'] );
-          if ( ! empty( $result['token_merchant'] ) )
-            update_post_meta( $order->id, '_token_merchant', $result['token_merchant'] );  
-        }
+    // Billing Address
+    $billing_address['first_name'] = $order->billing_first_name;
+    $billing_address['last_name'] = $order->billing_last_name;
+    $billing_address['address1'] = $order->billing_address_1;
+    $billing_address['address2'] = $order->billing_address_2;
+    $billing_address['city'] = $order->billing_city;
+    $billing_address['postal_code'] = $order->billing_postcode;
+    $billing_address['phone'] = $order->billing_phone;
 
-        else {
-          // Veritrans doesn't return tokens
-          $error_str = '';
-          foreach( $result['errors'] as $error_name => $error_message ) {
-            $error_str .= "<br><strong>{$error_name}</strong>: {$error_message}\n";
-          }
-          throw new Exception( $error_str );
-        }
-			}
+    // Body that will be send to Veritrans
+    $body = array(
+      'token_id' => $token_id,
+      'order_id' => $order_id,
+      'order_items' => $order_items,
+      'gross_amount' => ceil( $order->order_total ),
+      'email' => $order->billing_email,
+      'shipping_address' => $shipping_address,
+      'billing_address' => $billing_address
+    );
 
-		}
-	
+    $headers = array( 
+      'Authorization' => 'Basic ' . $server_key,
+      'content-type' => 'application/json'
+    );    
+
+    $response = wp_remote_post( $endpoint_url, array(
+      'body' => json_encode($body),
+      'headers' => $headers,
+      'timeout' => 20,
+      'sslverify' => false
+    ) );
+
+    // If wp_remote_post failed
+    if( is_wp_error( $response ) ) {
+      throw new Exception( $response->get_error_message() );
+    }
+
+    $response_body = $response['body'];
+    $response_body = json_decode( $response_body );
+
+    // If response from Veritrans is failure
+    if( $response_body->code != 'VD00' ) {
+      throw new Exception( $response_body->message );
+    }
+    
+    // Set order as complete
+    $order->payment_complete();
+
+    // Remove cart
+    $woocommerce->cart->empty_cart();
   }
 
   /**
@@ -631,37 +837,73 @@ class WC_Gateway_Veritrans extends WC_Payment_Gateway {
 	 * @return void
 	 */
 	function veritrans_vtweb_response() {
+    global $woocommerce;
 		@ob_clean();
 
     $params = json_decode( file_get_contents('php://input'), true );
 
-    if( $params ) {
+    if (2 == $this->api_version)
+    {
 
-      if( ('' != $params['orderId']) && ('success' == $params['mStatus']) ){
-        $token_merchant = get_post_meta( $params['orderId'], '_token_merchant', true );
-        
-        $this->log->add('veritrans', 'Receiving notif for order with ID: ' . $params['orderId']);
-        $this->log->add('veritrans', 'Matching token merchant: ' . $token_merchant . ' = ' . $params['TOKEN_MERCHANT'] );
+      $veritrans_notification = new VeritransNotification();
 
-        if( $params['TOKEN_MERCHANT'] == $token_merchant ) {
-          header( 'HTTP/1.1 200 OK' );
-          $this->log->add( 'veritrans', 'Token Merchant match' );
-          do_action( "valid-veritrans-web-request", $params );
+      if (in_array($veritrans_notification->status_code, array(200, 201, 202)))
+      {
+
+        $veritrans = new Veritrans();
+        $veritrans->server_key = $this->server_key;
+        $veritrans_confirmation = $veritrans->confirm($veritrans_notification->order_id);
+
+        if ($veritrans_confirmation)
+        {
+          $order = new WC_Order( $veritrans_confirmation['order_id'] );
+          if ($veritrans_confirmation['transaction_status'] == 'capture')
+          {
+            $order->payment_complete();
+            $order->reduce_order_stock();
+          } else if ($veritrans_confirmation['transaction_status'] == 'challenge') 
+          {
+            $order->update_status('on-hold');
+          } else if ($veritrans_confirmation['transaction_status'] == 'deny')
+          {
+            $order->update_status('failed');
+          }
+          $woocommerce->cart->empty_cart();
         }
+        
       }
 
-      elseif( 'failure' == $params['mStatus'] ) {
-        global $woocommerce;
-        // Remove cart
-        $woocommerce->cart->empty_cart();
-      }
+    } else
+    {
+      if( $params ) {
 
-      else {
-        wp_die( "Veritrans Request Failure" );
+        if( ('' != $params['orderId']) && ('success' == $params['mStatus']) ){
+          $token_merchant = get_post_meta( $params['orderId'], '_token_merchant', true );
+          
+          $this->log->add('veritrans', 'Receiving notif for order with ID: ' . $params['orderId']);
+          $this->log->add('veritrans', 'Matching token merchant: ' . $token_merchant . ' = ' . $params['TOKEN_MERCHANT'] );
+
+          if( $params['TOKEN_MERCHANT'] == $token_merchant ) {
+            header( 'HTTP/1.1 200 OK' );
+            $this->log->add( 'veritrans', 'Token Merchant match' );
+            do_action( "valid-veritrans-web-request", $params );
+          }
+        }
+
+        elseif( 'failure' == $params['mStatus'] ) {
+          global $woocommerce;
+          // Remove cart
+          $woocommerce->cart->empty_cart();
+        }
+
+        else {
+          wp_die( "Veritrans Request Failure" );
+        }
       }
     }
 	}
 	
+
 	function successful_request( $posted ) {
 		global $woocommerce;
 
@@ -943,3 +1185,4 @@ class WC_Gateway_Veritrans extends WC_Payment_Gateway {
     return $country_code;
   }
 }
+

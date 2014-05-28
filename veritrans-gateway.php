@@ -29,6 +29,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 add_action( 'plugins_loaded', 'veritrans_gateway_init', 0 );
 
 function veritrans_gateway_init() {
+
   if ( ! class_exists( 'WC_Payment_Gateway' ) ) {
     return;
   }
