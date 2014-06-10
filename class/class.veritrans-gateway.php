@@ -38,13 +38,23 @@ class WC_Gateway_Veritrans extends WC_Payment_Gateway {
     $this->title          		= $this->get_option( 'title' );
     $this->description    		= $this->get_option( 'description' );
 		$this->select_veritrans_payment = $this->get_option( 'select_veritrans_payment' );
+    
     $this->client_key     		= $this->get_option( 'client_key' );
     $this->server_key     		= $this->get_option( 'server_key' );
+    $this->client_key_v2_sandbox         = $this->get_option( 'client_key_v2_sandbox' );
+    $this->server_key_v2_sandbox         = $this->get_option( 'server_key_v2_sandbox' );
+    $this->client_key_v2_production         = $this->get_option( 'client_key_v2_production' );
+    $this->server_key_v2_production         = $this->get_option( 'server_key_v2_production' );
+
 		$this->merchant_id     		= $this->get_option( 'merchant_id' );
     $this->merchant_hash_key 	= $this->get_option( 'merchant_hash_key' );
+    
     $this->api_version        = $this->get_option( 'select_veritrans_api_version' );
     $this->environment        = $this->get_option( 'select_veritrans_environment' );
+    
     $this->to_idr_rate        = $this->get_option( 'to_idr_rate' );
+
+    $this->enable_3d_secure   = $this->get_option( 'enable_3d_secure' );
 
     $this->log = new WC_Logger(); 
 
@@ -189,7 +199,11 @@ class WC_Gateway_Veritrans extends WC_Payment_Gateway {
    * Initialise Gateway Settings Form Fields
    */
   function init_form_fields() {
-		$key_url = 'https://payments.veritrans.co.id/map/settings/config_info';
+		
+    $key_url = 'https://payments.veritrans.co.id/map/settings/config_info';
+    $v2_sandbox_key_url = 'https://my.sandbox.veritrans.co.id';
+    $v2_production_key_url = 'https://my.veritrans.co.id';
+    
     $this->form_fields = array(
       'enabled' => array(
         'title' => __( 'Enable/Disable', 'woocommerce' ),
@@ -259,14 +273,48 @@ class WC_Gateway_Veritrans extends WC_Payment_Gateway {
         'type' => 'text',
 				'description' => sprintf(__('Input your Veritrans Client Key. Get the key <a href="%s" target="_blank">here</a>', 'woocommerce' ),$key_url),
         'default' => '',
-        'class' => 'v1_vtdirect_settings',
+        'class' => 'v1_vtdirect_settings sensitive',
       ),
       'server_key' => array(
         'title' => __("Server Key", 'woocommerce'),
         'type' => 'text',
 				'description' => sprintf(__('Input your Veritrans Server Key. Get the key <a href="%s" target="_blank">here</a>', 'woocommerce' ),$key_url),
         'default' => '',
-        'class' => 'v1_vtdirect_settings'
+        'class' => 'v1_vtdirect_settings sensitive'
+      ),
+      'client_key_v2_sandbox' => array(
+        'title' => __("Client Key", 'woocommerce'),
+        'type' => 'text',
+        'description' => sprintf(__('Input your <b>Sandbox</b> Veritrans Client Key. Get the key <a href="%s" target="_blank">here</a>', 'woocommerce' ),$v2_sandbox_key_url),
+        'default' => '',
+        'class' => 'v2_sandbox_settings sensitive',
+      ),
+      'server_key_v2_sandbox' => array(
+        'title' => __("Server Key", 'woocommerce'),
+        'type' => 'text',
+        'description' => sprintf(__('Input your <b>Sandbox</b> Veritrans Server Key. Get the key <a href="%s" target="_blank">here</a>', 'woocommerce' ),$v2_sandbox_key_url),
+        'default' => '',
+        'class' => 'v2_sandbox_settings sensitive'
+      ),
+      'client_key_v2_production' => array(
+        'title' => __("Client Key", 'woocommerce'),
+        'type' => 'text',
+        'description' => sprintf(__('Input your <b>Production</b> Veritrans Client Key. Get the key <a href="%s" target="_blank">here</a>', 'woocommerce' ),$v2_production_key_url),
+        'default' => '',
+        'class' => 'v2_production_settings sensitive',
+      ),
+      'server_key_v2_production' => array(
+        'title' => __("Server Key", 'woocommerce'),
+        'type' => 'text',
+        'description' => sprintf(__('Input your <b>Production</b> Veritrans Server Key. Get the key <a href="%s" target="_blank">here</a>', 'woocommerce' ),$v2_production_key_url),
+        'default' => '',
+        'class' => 'v2_production_settings sensitive'
+      ),
+      'enable_3d_secure' => array(
+        'title' => __( 'Enable 3D Secure', 'woocommerce' ),
+        'type' => 'checkbox',
+        'label' => __( 'Enable 3D Secure?', 'woocommerce' ),
+        'default' => 'no'
       ),
     );
 
@@ -349,7 +397,16 @@ class WC_Gateway_Veritrans extends WC_Payment_Gateway {
     $veritrans->api_version = 2;
     $veritrans->environment = ($this->environment == 'production' ? Veritrans::ENVIRONMENT_PRODUCTION : Veritrans::ENVIRONMENT_DEVELOPMENT);
     $veritrans->payment_type = ($this->select_veritrans_payment == 'veritrans_direct' ? Veritrans::VT_DIRECT : Veritrans::VT_WEB);
-    $veritrans->server_key = $this->server_key;
+    if ($veritrans->environment == Veritrans::ENVIRONMENT_PRODUCTION)
+    {
+      $veritrans->server_key = $this->server_key_v2_production;
+    } else
+    {
+      $veritrans->server_key = $this->server_key_v2_sandbox;
+    }
+    if ($this->enable_3d_secure == 'yes')
+      $veritrans->enable_3d_secure = TRUE;
+    
     $veritrans->order_id = $order_id;
 
     if ($_POST['ship_to_different_address'])
@@ -851,7 +908,14 @@ class WC_Gateway_Veritrans extends WC_Payment_Gateway {
       {
 
         $veritrans = new Veritrans();
-        $veritrans->server_key = $this->server_key;
+        if ($this->environment == 'production')
+        {
+          $veritrans->server_key = $this->server_key_v2_production;
+        } else
+        {
+          $veritrans->server_key = $this->server_key_v2_sandbox;
+        }
+        
         $veritrans_confirmation = $veritrans->confirm($veritrans_notification->order_id);
 
         if ($veritrans_confirmation)

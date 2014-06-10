@@ -44,14 +44,25 @@ class Veritrans2014 {
       ));
     curl_setopt($ch, CURLOPT_POST, 1);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
 
-    $result = curl_exec($ch);
+    try {
+      $result = curl_exec($ch);
+      if (FALSE === $result)
+        throw new \Exception(curl_error($ch), curl_errno($ch));
 
-    curl_close($ch);
+      curl_close($ch);
 
-    // convert the result into an associative array
-    return json_decode($result, true);
-
+      // convert the result into an associative array
+      return json_decode($result, true);  
+    } catch (Exception $e) {
+      trigger_error(sprintf(
+        'Curl failed with error #%d: %s',
+        $e->getCode(), $e->getMessage()),
+        E_USER_ERROR);
+      exit;
+    }
+    
   }
 
   protected function _getPaymentType()
@@ -86,7 +97,7 @@ class Veritrans2014 {
   {
     $total = 0;
     foreach ($this->veritrans->items as $item) {
-      $total += intval($item['price']) * intval($item['quantity']);
+      $total += $item['price'] * intval($item['quantity']);
     }
     return $total;
   }
@@ -130,7 +141,26 @@ class Veritrans2014 {
     $data['customer_details']['billing_address']['country_code'] = $this->veritrans->country_code;
 
     if ($this->veritrans->enable_3d_secure)
-      $data['secure'] = TRUE;
+    {
+      if ($this->veritrans->payment_type == \Veritrans::VT_WEB)
+      {
+        if (is_array($this->veritrans->enable_3d_secure))
+        {
+          foreach ($this->veritrans->enable_3d_secure as $method) {
+            $data[$payment_type_str][$method . '_3d_secure'] = true ;
+          }
+        } else
+        {
+          foreach (array("credit_card", "mandiri_clickpay", "cimb_clicks", "permata") as $method) {
+            $data[$payment_type_str][$method . '_3d_secure'] = true ;
+          }
+        }
+      } else
+      {
+        $data['secure'] = TRUE;
+      }
+    }
+      
 
     return $data;        
   }
